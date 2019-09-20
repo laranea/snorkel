@@ -20,7 +20,7 @@ class LabelModelTest(unittest.TestCase):
         label_model.train_config = TrainConfig()  # type: ignore
         L_aug = L + 1
         label_model._set_constants(L_aug)
-        label_model._create_tree()
+        label_model._set_dependencies([])
         label_model._generate_O(L_aug)
         label_model._build_mask()
         label_model._get_augmented_label_matrix(L_aug)
@@ -100,7 +100,7 @@ class LabelModelTest(unittest.TestCase):
         )
 
         label_model = self._set_up_model(L)
-        label_model._generate_O(L + 1, higher_order=False)
+        label_model._generate_O(L + 1)
         true_O = np.array(
             [
                 [3 / 4, 0, 0, 3 / 4, 1 / 2, 1 / 4],
@@ -117,7 +117,8 @@ class LabelModelTest(unittest.TestCase):
 
         # Higher order returns same matrix (num source = num cliques)
         # Need to test c_tree form
-        label_model._generate_O(L + 1, higher_order=True)
+        label_model.higher_order = True
+        label_model._generate_O(L + 1)
         np.testing.assert_array_almost_equal(
             label_model.O.cpu().detach().numpy(), true_O
         )
@@ -131,8 +132,9 @@ class LabelModelTest(unittest.TestCase):
         L_shift = L + 1
         lm = LabelModel(cardinality=k, verbose=False)
         lm._set_constants(L_shift)
-        lm._create_tree()
-        L_aug = lm._get_augmented_label_matrix(L_shift, higher_order=True)
+        lm._set_dependencies([])
+        lm.higher_order=True
+        L_aug = lm._get_augmented_label_matrix(L_shift)
 
         # Should have 10 columns:
         # - 5 * 2 = 10 for the sources

@@ -2,10 +2,12 @@ import logging
 import pickle
 import random
 from collections import Counter
-from itertools import chain, permutations
+from functools import partial
+from itertools import chain, permutations, product
 from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple, Union
 
 import numpy as np
+import scipy as sp
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -165,9 +167,7 @@ class LabelModel(nn.Module):
             L_ind[:, (y - 1) :: self.cardinality] = np.where(L == y, 1, 0)
         return L_ind
 
-    def _get_augmented_label_matrix(
-        self, L: np.ndarray, higher_order: bool = False
-    ) -> np.ndarray:
+    def _get_augmented_label_matrix(self, L: np.ndarray) -> np.ndarray:
         """Create augmented version of label matrix.
 
         In augmented version, each column is an indicator
@@ -178,8 +178,6 @@ class LabelModel(nn.Module):
         ----------
         L
             An [n,m] label matrix with values in {0,1,...,k}
-        higher_order
-            Whether to include higher-order correlations (e.g. LF pairs) in matrix
 
         Returns
         -------
@@ -208,20 +206,52 @@ class LabelModel(nn.Module):
         # Get the higher-order clique statistics based on the clique tree
         # First, iterate over the maximal cliques (nodes of c_tree) and
         # separator sets (edges of c_tree)
-        if higher_order:
+        if self.higher_order:
             L_aug = np.copy(L_ind)
             for item in chain(self.c_tree.nodes(), self.c_tree.edges()):
                 if isinstance(item, int):
                     C = self.c_tree.node[item]
+                    C_type = "node"
                 elif isinstance(item, tuple):
                     C = self.c_tree[item[0]][item[1]]
+                    C_type = "edge"
                 else:
                     raise ValueError(item)
                 members = list(C["members"])
 
-                # With unary maximal clique, just store its existing index
-                C["start_index"] = members[0] * self.cardinality
-                C["end_index"] = (members[0] + 1) * self.cardinality
+                nc = len(members)
+
+                # If a unary maximal clique, just store its existing index
+                if nc == 1:
+                    C["start_index"] = members[0] * self.cardinality
+                    C["end_index"] = (members[0] + 1) * self.cardinality
+
+                # Else add one column for each possible value
+                else:
+                    L_C = np.ones((self.n, self.cardinality ** nc))
+                    for i, vals in enumerate(
+                        product(range(self.cardinality), repeat=nc)
+                    ):
+                        for j, v in enumerate(vals):
+                            L_C[:, i] *= L_ind[:, members[j] * self.cardinality + v]
+
+                    # Add to L_aug and store the indices
+                    if L_aug is not None:
+                        C["start_index"] = L_aug.shape[1]
+                        C["end_index"] = L_aug.shape[1] + L_C.shape[1]
+                        L_aug = np.hstack([L_aug, L_C])
+                    else:
+                        C["start_index"] = 0
+                        C["end_index"] = L_C.shape[1]
+                        L_aug = L_C
+
+                    # Add to self.c_data as well
+                    id = tuple(members) if len(members) > 1 else members[0]
+                    self.c_data[id] = _CliqueData(
+                        start_index=C["start_index"],
+                        end_index=C["end_index"],
+                        max_cliques=set([item]) if C_type == "node" else set(item),
+                    )
             return L_aug
         else:
             return L_ind
@@ -241,17 +271,16 @@ class LabelModel(nn.Module):
                     self.mask[si:ei, sj:ej] = 0
                     self.mask[sj:ej, si:ei] = 0
 
-    def _generate_O(self, L: np.ndarray, higher_order: bool = False) -> None:
+    def _generate_O(self, L: np.ndarray) -> None:
         """Generate overlaps and conflicts matrix from label matrix.
 
         Parameters
         ----------
         L
             An [n,m] label matrix with values in {0,1,...,k}
-        higher_order
-            Whether to include higher-order correlations (e.g. LF pairs) in matrix
         """
-        L_aug = self._get_augmented_label_matrix(L, higher_order=higher_order)
+        L_aug = self._get_augmented_label_matrix(L)
+        self.L_aug = L_aug
         self.d = L_aug.shape[1]
         self.O = (
             torch.from_numpy(L_aug.T @ L_aug / self.n).float().to(self.config.device)
@@ -403,7 +432,20 @@ class LabelModel(nn.Module):
         self._set_constants(L_shift)
         L_aug = self._get_augmented_label_matrix(L_shift)
         mu = self.mu.cpu().detach().numpy()
-        jtm = np.ones(L_aug.shape[1])
+        if self.higher_order:
+            jtm = np.zeros(L_aug.shape[1])
+
+            # All maximal cliques are +1
+            for i in self.c_tree.nodes():
+                node = self.c_tree.node[i]
+                jtm[node["start_index"] : node["end_index"]] = 1
+
+            # All separator sets are -1
+            for i, j in self.c_tree.edges():
+                edge = self.c_tree[i][j]
+                jtm[edge["start_index"] : edge["end_index"]] = 1
+        else:
+            jtm = np.ones(L_aug.shape[1])
 
         # Note: We omit abstains, effectively assuming uniform distribution here
         X = np.exp(L_aug @ np.diag(jtm) @ np.log(mu) + np.log(self.p))
@@ -594,9 +636,14 @@ class LabelModel(nn.Module):
             raise ValueError(f"L_train should have at least 3 labeling functions")
         self.t = 1
 
-    def _create_tree(self) -> None:
+    def _set_dependencies(self, deps):
         nodes = range(self.m)
-        self.c_tree = get_clique_tree(nodes, [])
+        self.c_tree = get_clique_tree(nodes, deps)
+        self.deps = deps
+        if len(deps) > 0:
+            self.higher_order = True
+        else:
+            self.higher_order = False
 
     def _execute_logging(self, loss: torch.Tensor) -> Metrics:
         self.eval()
@@ -881,7 +928,7 @@ class LabelModel(nn.Module):
 
         self._set_constants(L_shift)
         self._set_class_balance(class_balance, Y_dev)
-        self._create_tree()
+        self._set_dependencies([])
         lf_analysis = LFAnalysis(L_train)
         self.coverage = lf_analysis.lf_coverages()
 
