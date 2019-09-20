@@ -115,13 +115,9 @@ class LabelModelTest(unittest.TestCase):
             label_model.O.cpu().detach().numpy(), true_O
         )
 
-        # Higher order returns same matrix (num source = num cliques)
-        # Need to test c_tree form
         label_model.higher_order = True
         label_model._generate_O(L + 1)
-        np.testing.assert_array_almost_equal(
-            label_model.O.cpu().detach().numpy(), true_O
-        )
+        np.testing.assert_array_almost_equal(label_model.O.numpy(), true_O)
 
     def test_augmented_L_construction(self):
         # 5 LFs
@@ -133,7 +129,7 @@ class LabelModelTest(unittest.TestCase):
         lm = LabelModel(cardinality=k, verbose=False)
         lm._set_constants(L_shift)
         lm._set_dependencies([])
-        lm.higher_order = True
+        lm.higher_order=True
         L_aug = lm._get_augmented_label_matrix(L_shift)
 
         # Should have 10 columns:
@@ -296,8 +292,9 @@ class LabelModelTest(unittest.TestCase):
 
     def test_loss(self):
         L = np.array([[0, -1, 0], [0, 1, -1]])
-        label_model = LabelModel(cardinality=2, verbose=False)
-        label_model.fit(L, n_epochs=1)
+        label_model = self._set_up_model(L)
+        label_model._get_augmented_label_matrix(L + 1)
+
         label_model.mu = nn.Parameter(label_model.mu_init.clone() + 0.05)
 
         # l2_loss = l2*M*K*||mu - mu_init||_2 = 3*2*(0.05^2) = 0.03

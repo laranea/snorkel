@@ -3,10 +3,9 @@ import random
 from functools import partial
 from typing import Any, List, Optional, Tuple
 
-import cvxpy as cp
 import numpy as np
-import scipy as sp
 import torch
+import torch.nn as nn
 
 from snorkel.labeling.analysis import LFAnalysis
 from snorkel.labeling.model.label_model import LabelModel, TrainConfig
@@ -14,43 +13,35 @@ from snorkel.utils.config_utils import merge_config
 
 
 class DependencyAwareLabelModel(LabelModel):
-    """A LabelModel that handles dependencies and learn associated weights to assign training labels."""
+    def _generate_O_inv(self, L: np.ndarray):
+        """Form the *inverse* overlaps matrix"""
+        self._generate_O(L)
+        self.O_inv = torch.from_numpy(np.linalg.inv(self.O.numpy())).float()
+
+    def _init_params(self) -> None:
+        super()._init_params()
+        if self.inv_form:
+            self.Z = nn.Parameter(torch.randn(self.d, self.cardinality)).float()
+
+    def _get_Q(self):
+        """Get the model's estimate of Q = \mu P \mu^T
+        We can then separately extract \mu subject to additional constraints,
+        e.g. \mu P 1 = diag(O).
+        """
+        Z = self.Z.detach().clone().numpy()
+        O = self.O.numpy()
+        I_k = np.eye(self.cardinality)
+        return O @ Z @ np.linalg.inv(I_k + Z.T @ O @ Z) @ Z.T @ O
+
+    def _loss_inv_Z(self):
+        return torch.norm((self.O_inv + self.Z @ self.Z.t())[self.mask]) ** 2
 
     def _loss_inv_mu(self, l2: float = 0) -> torch.Tensor:
         loss_1 = torch.norm(self.Q - self.mu @ self.P @ self.mu.t()) ** 2
         loss_2 = torch.norm(torch.sum(self.mu @ self.P, 1) - torch.diag(self.O)) ** 2
         return loss_1 + loss_2 + self.loss_l2(l2=l2)
 
-    def _robust_pca_Q(self, L: np.ndarray) -> np.ndarray:
-        N = float(np.shape(L)[0])
-        M = np.shape(L)[1]
-        sigma_O = (np.dot(L.T, L)) / (N - 1) - np.outer(
-            np.mean(L, axis=0), np.mean(L, axis=0)
-        )
-        O_root = np.real(sp.linalg.sqrtm(sigma_O))
-
-        L_cvx = cp.Variable([M, M], PSD=True)
-        S = cp.Variable([M, M], PSD=True)
-        R = cp.Variable([M, M], PSD=True)
-        lam = 1 / np.sqrt(M)
-        gamma = 1e-8
-
-        objective = cp.Minimize(
-            0.5 * (cp.norm(R * O_root, "fro") ** 2)
-            - cp.trace(R)
-            + lam * (gamma * cp.pnorm(S, 1) + cp.norm(L_cvx, "nuc"))
-        )
-        constraints = [R == S - L_cvx, L_cvx >> 0]
-
-        prob = cp.Problem(objective, constraints)
-        prob.solve(verbose=False)
-        U, s, V = np.linalg.svd(L_cvx.value)
-        Z = np.sqrt(s[: self.cardinality]) * U[:, : self.cardinality]
-        O = self.O.numpy()
-        I_k = np.eye(self.cardinality)
-        return O @ Z @ np.linalg.inv(I_k + Z.T @ O @ Z) @ Z.T @ O
-
-    def _fit_loss(self, loss_fn):
+    def fit_loss(self, loss_fn):
         # Restore model if necessary
         start_iteration = 0
 
@@ -91,7 +82,7 @@ class DependencyAwareLabelModel(LabelModel):
         class_balance: Optional[List[float]] = None,
         **kwargs: Any,
     ) -> None:
-        """Train label model using dependencies (if given).
+        """Train label model.
 
         Train label model to estimate mu, the parameters used to combine LFs.
 
@@ -117,10 +108,10 @@ class DependencyAwareLabelModel(LabelModel):
         --------
         >>> L = np.array([[0, 0, -1], [-1, 0, 1], [1, -1, 0]])
         >>> Y_dev = [0, 1, 0]
-        >>> label_model = DependencyAwareLabelModel(verbose=False)
-        >>> label_model.fit_with_deps(L, deps=[(0, 2)])  # doctest: +SKIP
-        >>> label_model.fit_with_deps(L, deps=[(0, 2)], Y_dev=Y_dev)  # doctest: +SKIP
-        >>> label_model.fit_with_deps(L, deps=[(0, 2)], class_balance=[0.7, 0.3])  # doctest: +SKIP
+        >>> label_model = LabelModel(verbose=False)
+        >>> label_model.fit(L)
+        >>> label_model.fit(L, Y_dev=Y_dev)
+        >>> label_model.fit(L, class_balance=[0.7, 0.3])
         """
         # Set random seed
         self.train_config: TrainConfig = merge_config(  # type:ignore
@@ -140,14 +131,23 @@ class DependencyAwareLabelModel(LabelModel):
         self._set_constants(L_shift)
         self._set_class_balance(class_balance, Y_dev)
         self._set_dependencies(deps or [])
+        # Whether to compute O_inv for handling dependencies.
+        self.inv_form = len(self.deps) > 0
         lf_analysis = LFAnalysis(L_train)
         self.coverage = lf_analysis.lf_coverages()
 
         # Compute O and initialize params
         if self.config.verbose:  # pragma: no cover
             logging.info("Computing O...")
-        self._generate_O(L_shift)
+        if self.inv_form:
+            self._generate_O_inv(L_shift)
+        else:
+            self._generate_O(L_shift)
         self._init_params()
+
+        # Estimate \mu
+        if self.config.verbose:  # pragma: no cover
+            logging.info("Estimating \mu...")
 
         # Set model to train mode
         self.train()
@@ -162,11 +162,16 @@ class DependencyAwareLabelModel(LabelModel):
         self._set_optimizer()
         self._set_lr_scheduler()
 
-        if self.higher_order:
-            self.Q = self._robust_pca_Q(self._get_augmented_label_matrix(L_shift))
-            self._fit_loss(partial(self._loss_inv_mu, l2=self.train_config.l2))
+        if self.inv_form:
+            # Estimate Z.
+            self.fit_loss(self._loss_inv_Z)
+            self.Q = torch.from_numpy(self._get_Q()).float()
+            # Estimate mu.
+            self._set_optimizer()
+            self._set_lr_scheduler()
+            self.fit_loss(partial(self._loss_inv_mu, l2=self.train_config.l2))
         else:
-            self._fit_loss(partial(self._loss_mu, l2=self.train_config.l2))
+            self.fit_loss(partial(self._loss_mu, l2=self.train_config.l2))
 
         # Post-processing operations on mu
         self._clamp_params()
