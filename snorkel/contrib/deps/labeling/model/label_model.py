@@ -7,7 +7,6 @@ import cvxpy as cp
 import numpy as np
 import scipy as sp
 import torch
-import torch.nn as nn
 
 from snorkel.labeling.analysis import LFAnalysis
 from snorkel.labeling.model.label_model import LabelModel, TrainConfig
@@ -15,6 +14,8 @@ from snorkel.utils.config_utils import merge_config
 
 
 class DependencyAwareLabelModel(LabelModel):
+    """A LabelModel that handles dependencies and learn associated weights to assign training labels."""
+
     def _loss_inv_mu(self, l2: float = 0) -> torch.Tensor:
         loss_1 = torch.norm(self.Q - self.mu @ self.P @ self.mu.t()) ** 2
         loss_2 = torch.norm(torch.sum(self.mu @ self.P, 1) - torch.diag(self.O)) ** 2
@@ -42,7 +43,7 @@ class DependencyAwareLabelModel(LabelModel):
         constraints = [R == S - L_cvx, L_cvx >> 0]
 
         prob = cp.Problem(objective, constraints)
-        result = prob.solve(verbose=False)
+        prob.solve(verbose=False)
         U, s, V = np.linalg.svd(L_cvx.value)
         Z = np.sqrt(s[: self.cardinality]) * U[:, : self.cardinality]
         O = self.O.numpy()

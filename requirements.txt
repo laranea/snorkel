@@ -9,7 +9,6 @@
 #### ESSENTIAL LIBRARIES
 
 # General scientific computing
-cvxpy>=1.0.25,<2.0.0
 numpy>=1.16.0,<2.0.0
 scipy>=1.2.0,<2.0.0
 
