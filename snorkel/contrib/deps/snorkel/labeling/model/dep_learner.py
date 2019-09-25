@@ -34,7 +34,7 @@ class DependencyLearner(object):
         deps = []
         for i in range(J.shape[0]):
             for j in range(J.shape[1]):
-                if abs(J[i,j]) >= thresh:
+                if abs(J[i,j]) > thresh:
                     deps.append((i,j))
         return deps
 
