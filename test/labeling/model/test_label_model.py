@@ -129,7 +129,7 @@ class LabelModelTest(unittest.TestCase):
         lm = LabelModel(cardinality=k, verbose=False)
         lm._set_constants(L_shift)
         lm._set_dependencies([])
-        lm.higher_order=True
+        lm.higher_order = True
         L_aug = lm._get_augmented_label_matrix(L_shift)
 
         # Should have 10 columns:
