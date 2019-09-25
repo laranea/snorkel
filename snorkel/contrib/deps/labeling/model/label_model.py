@@ -43,7 +43,7 @@ class DependencyAwareLabelModel(LabelModel):
         constraints = [R == S - L_cvx, L_cvx >> 0]
 
         prob = cp.Problem(objective, constraints)
-        prob.solve(verbose=False)
+        prob.solve(verbose=False, solver=cp.CVXOPT)
         U, s, V = np.linalg.svd(L_cvx.value)
         Z = np.sqrt(s[: self.cardinality]) * U[:, : self.cardinality]
         O = self.O.numpy()
@@ -118,9 +118,9 @@ class DependencyAwareLabelModel(LabelModel):
         >>> L = np.array([[0, 0, -1], [-1, 0, 1], [1, -1, 0]])
         >>> Y_dev = [0, 1, 0]
         >>> label_model = DependencyAwareLabelModel(verbose=False)
-        >>> label_model.fit_with_deps(L, deps=[(0, 2)])
-        >>> label_model.fit_with_deps(L, deps=[(0, 2)], Y_dev=Y_dev)
-        >>> label_model.fit_with_deps(L, deps=[(0, 2)], class_balance=[0.7, 0.3])
+        >>> label_model.fit_with_deps(L, deps=[(0, 2)])  # doctest: +SKIP
+        >>> label_model.fit_with_deps(L, deps=[(0, 2)], Y_dev=Y_dev)  # doctest: +SKIP
+        >>> label_model.fit_with_deps(L, deps=[(0, 2)], class_balance=[0.7, 0.3])  # doctest: +SKIP
         """
         # Set random seed
         self.train_config: TrainConfig = merge_config(  # type:ignore
