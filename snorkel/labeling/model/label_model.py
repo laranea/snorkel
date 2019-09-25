@@ -636,7 +636,7 @@ class LabelModel(nn.Module):
             raise ValueError(f"L_train should have at least 3 labeling functions")
         self.t = 1
 
-    def _set_dependencies(self, deps):
+    def _set_dependencies(self, deps: List[Tuple[int, int]]) -> None:
         nodes = range(self.m)
         self.c_tree = get_clique_tree(nodes, deps)
         self.deps = deps

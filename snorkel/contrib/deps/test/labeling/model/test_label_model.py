@@ -1,18 +1,12 @@
-import shutil
-import tempfile
 import unittest
 from typing import List, Set, Tuple
 
 import numpy as np
 import pytest
-import torch
-import torch.nn as nn
-import torch.optim as optim
 
 from snorkel.contrib.deps.labeling.model.label_model import DependencyAwareLabelModel
 from snorkel.labeling import LabelModel
 from snorkel.labeling.model.label_model import TrainConfig
-from snorkel.synthetic.synthetic_data import generate_simple_label_matrix
 
 
 def generate_synthetic_data(
@@ -37,8 +31,8 @@ def generate_synthetic_data(
     l_groups
         List of sets of dependent (correlated) columns.
 
-    Returns 
-    ------
+    Returns
+    -------
     y_true: 1D int np array of true labels.
     l: 2D int np array representing label matrix
     """

@@ -9,7 +9,6 @@
 #### ESSENTIAL LIBRARIES
 
 # General scientific computing
-cvxpy>=1.0.25,<2.0.0
 numpy>=1.16.0,<2.0.0
 scipy>=1.2.0,<2.0.0
 
@@ -21,7 +20,7 @@ tqdm>=4.29.0,<5.0.0
 scikit-learn>=0.20.2,<0.22.0
 torch>=1.1.0,<1.2.0
 
-# LF dependency learning
+# Label Model
 networkx>=2.2,<3.0
 
 # Model introspection tools
@@ -39,6 +38,9 @@ dask[complete]>=2.1.0,<3.0.0
 # Serialization
 dill>=0.3.0,<0.4.0
 
+# Dependency Learning
+cvxpy>=1.0.25,<2.0.0
+cvxopt==1.2.3
 
 #### DEV TOOLS
 
