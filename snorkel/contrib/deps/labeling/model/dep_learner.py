@@ -115,13 +115,6 @@ class DependencyLearner(object):
         -------
         List[Tuple[int, int]]
             List of tuples denoting dependencies among LFs
-
-        Examples
-        --------
-        >>> L = np.array([[0, 0, -1], [0, 0, -1], [1, -1, 0]])
-        >>> Y_dev = [0, 1, 0]
-        >>> dep_learner = DependencyLearner(cardinality=2)
-        >>> dep_learner.fit(L)
         """
 
         N = float(np.shape(L)[0])
