@@ -2,12 +2,10 @@ import logging
 import pickle
 import random
 from collections import Counter
-from functools import partial
 from itertools import chain, permutations, product
 from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple, Union
 
 import numpy as np
-import scipy as sp
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -432,20 +430,7 @@ class LabelModel(nn.Module):
         self._set_constants(L_shift)
         L_aug = self._get_augmented_label_matrix(L_shift)
         mu = self.mu.cpu().detach().numpy()
-        if self.higher_order:
-            jtm = np.zeros(L_aug.shape[1])
-
-            # All maximal cliques are +1
-            for i in self.c_tree.nodes():
-                node = self.c_tree.node[i]
-                jtm[node["start_index"] : node["end_index"]] = 1
-
-            # All separator sets are -1
-            for i, j in self.c_tree.edges():
-                edge = self.c_tree[i][j]
-                jtm[edge["start_index"] : edge["end_index"]] = 1
-        else:
-            jtm = np.ones(L_aug.shape[1])
+        jtm = np.ones(L_aug.shape[1])
 
         # Note: We omit abstains, effectively assuming uniform distribution here
         X = np.exp(L_aug @ np.diag(jtm) @ np.log(mu) + np.log(self.p))
