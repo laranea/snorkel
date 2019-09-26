@@ -2,12 +2,10 @@ import logging
 import pickle
 import random
 from collections import Counter
-from functools import partial
 from itertools import chain, permutations, product
 from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple, Union
 
 import numpy as np
-import scipy as sp
 import torch
 import torch.nn as nn
 import torch.optim as optim
