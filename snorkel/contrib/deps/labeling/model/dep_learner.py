@@ -161,7 +161,7 @@ class DependencyLearner(object):
         # solve problem with cvxpy
         prob = cp.Problem(objective, constraints)
         try:
-            prob.solve(verbose=verbose, solver=cp.CVXOPT)
+            prob.solve(verbose=verbose)
         except SolverError:
             raise ValueError(
                 "There may be no dependencies among LFs. Otherwise, try different gamma and lambda values."

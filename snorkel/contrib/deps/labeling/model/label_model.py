@@ -43,7 +43,7 @@ class DependencyAwareLabelModel(LabelModel):
         constraints = [R == S - L_cvx, L_cvx >> 0]
 
         prob = cp.Problem(objective, constraints)
-        prob.solve(verbose=False, solver=cp.CVXOPT)
+        prob.solve(verbose=False)
         U, s, V = np.linalg.svd(L_cvx.value)
         Z = np.sqrt(s[: self.cardinality]) * U[:, : self.cardinality]
         O = self.O.numpy()
