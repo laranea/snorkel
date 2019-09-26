@@ -1,10 +1,9 @@
-import logging
+import warnings
 from typing import List, Optional, Tuple
 
 import cvxpy as cp
 import numpy as np
 import scipy as sp
-from cvxpy import SolverError
 
 
 class DependencyLearner(object):
@@ -38,7 +37,9 @@ class DependencyLearner(object):
     def __init__(self, cardinality: int = 2) -> None:
         self.cardinality = cardinality
 
-    def _force_singleton(self, deps: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    def _force_singleton(
+        self, deps: List[Tuple[int, int]], M: int
+    ) -> List[Tuple[int, int]]:
         """Force singleton separator assumption given list of dependencies.
 
         This translates to converting chain dependencies to fully connected clusters of dependencies.
@@ -62,7 +63,13 @@ class DependencyLearner(object):
                     deps_singleton.append((i, l))
                 if (i == l) and (j < k):
                     deps_singleton.append((j, k))
-        return list(set(deps_singleton))
+        all_deps = list(set(deps_singleton))
+
+        if len(all_deps) == sp.special.comb(M, 2):
+            raise ValueError(
+                "Dependency structure is fully connected. Rerun with higher thresh_mult."
+            )
+        return all_deps
 
     def _get_deps_from_inverse_sig(
         self, J: np.ndarray, thresh: float
@@ -123,7 +130,7 @@ class DependencyLearner(object):
 
         if L.max() + 1 > self.cardinality:
             raise ValueError(
-                f"L has cardinality {L.max()+1}, cardinality={self.cardinality} passed in."
+                f"Does not match DependencyLearner cardinality={self.cardinality}, L has cardinality {L.max()+1}"
             )
 
         # calculate agreement-disagreement rates based on random class splits
@@ -160,12 +167,7 @@ class DependencyLearner(object):
 
         # solve problem with cvxpy
         prob = cp.Problem(objective, constraints)
-        try:
-            prob.solve(verbose=verbose)
-        except SolverError:
-            raise ValueError(
-                "There may be no dependencies among LFs. Otherwise, try different gamma and lambda values."
-            )
+        prob.solve(verbose=verbose)
 
         # set threshold based on max. off diagonal entries
         J_hat = S.value
@@ -180,15 +182,11 @@ class DependencyLearner(object):
 
         # add warning if no outliers present in off diagonal entries
         if np.max(off_diag) < outlier_bound:
-            logging.warn(
+            warnings.warn(
                 "There may be no real dependencies among LFs, returned list contains extraneous dependencies. Include thresh_mult = 1.0 in parameter search."
             )
 
         # find dependencies
         deps_all = self._get_deps_from_inverse_sig(J_hat, thresh)
-        deps = self._force_singleton(deps_all)
-        if len(deps) == sp.special.comb(M, 2):
-            logging.warn(
-                "Dependency structure is fully connected. Rerun with higher thresh_mult."
-            )
+        deps = self._force_singleton(deps_all, M)
         return deps
