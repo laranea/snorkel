@@ -237,6 +237,34 @@ class TestLabelModelAdvanced(unittest.TestCase):
         self.assertGreaterEqual(score["accuracy"], 0.75)
         self.assertGreaterEqual(d_score["accuracy"], score["accuracy"])
 
+    def test_label_model_learn(self) -> None:
+        """Test the LabelModel's estimate of deps and P, Y on a simple synthetic dataset."""
+        cond_probs = np.array([[0.5, 0.4, 0.1], [0.5, 0.1, 0.4]])
+        y_true, L = generate_synthetic_data(
+            100000, 0.8, [0.3, 0.7], cond_probs, [{0, 1, 4}, {2}, {3}, {5}, {6}]
+        )
+
+        np.random.seed(123)
+
+        # Train LabelModel
+        lm = LabelModel(cardinality=2)
+        lm.fit(L, l2=0.2, n_epochs=5000)
+        score = lm.score(L, y_true)
+
+        # Train DependencyAwareLabelModel
+        dalm = DependencyAwareLabelModel(cardinality=2)
+        dalm.fit_with_deps(L, learn_deps=True, l2=0.2, n_epochs=5000)
+        d_score = dalm.score(L, y_true)
+
+        # Test predicted labels
+        self.assertGreaterEqual(score["accuracy"], 0.75)
+        self.assertGreaterEqual(d_score["accuracy"], score["accuracy"])
+
+        # Test combined learned and passed in deps
+        dalm = DependencyAwareLabelModel(cardinality=2)
+        dalm.fit_with_deps(L, learn_deps=True, deps=[(0, 6)], l2=0.2, n_epochs=100)
+        self.assertGreaterEqual(len(dalm.deps), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

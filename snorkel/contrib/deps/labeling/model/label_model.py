@@ -8,6 +8,7 @@ import numpy as np
 import scipy as sp
 import torch
 
+from snorkel.contrib.deps.labeling.model.dep_learner import DependencyLearner
 from snorkel.labeling.analysis import LFAnalysis
 from snorkel.labeling.model.label_model import LabelModel, TrainConfig
 from snorkel.utils.config_utils import merge_config
@@ -21,7 +22,9 @@ class DependencyAwareLabelModel(LabelModel):
         loss_2 = torch.norm(torch.sum(self.mu @ self.P, 1) - torch.diag(self.O)) ** 2
         return loss_1 + loss_2 + self.loss_l2(l2=l2)
 
-    def _robust_pca_Q(self, L: np.ndarray) -> np.ndarray:
+    def _robust_pca_Q(
+        self, L: np.ndarray, gamma: Optional[float] = 1e-8, lam: Optional[float] = 0.1
+    ) -> np.ndarray:
         N = float(np.shape(L)[0])
         M = np.shape(L)[1]
         sigma_O = (np.dot(L.T, L)) / (N - 1) - np.outer(
@@ -32,8 +35,6 @@ class DependencyAwareLabelModel(LabelModel):
         L_cvx = cp.Variable([M, M], PSD=True)
         S = cp.Variable([M, M], PSD=True)
         R = cp.Variable([M, M], PSD=True)
-        lam = 1 / np.sqrt(M)
-        gamma = 1e-8
 
         objective = cp.Minimize(
             0.5 * (cp.norm(R * O_root, "fro") ** 2)
@@ -87,6 +88,10 @@ class DependencyAwareLabelModel(LabelModel):
         self,
         L_train: np.ndarray,
         Y_dev: Optional[np.ndarray] = None,
+        learn_deps: Optional[bool] = True,
+        thresh_mult: Optional[float] = 0.5,
+        gamma: Optional[float] = 1e-8,
+        lam: Optional[float] = 0.1,
         deps: Optional[List[Tuple[int, int]]] = None,
         class_balance: Optional[List[float]] = None,
         **kwargs: Any,
@@ -101,6 +106,14 @@ class DependencyAwareLabelModel(LabelModel):
             An [n,m] matrix with values in {-1,0,1,...,k-1}
         Y_dev
             Gold labels for dev set for estimating class_balance, by default None
+        learn_deps
+            Whether to learn dependencies, by default True
+        thresh_mult
+            Threshold multiplier for selecting thresh_mult * max off diagonal entry from sparse matrix
+        gamma
+            Parameter in objective function related to sparsity
+        lam
+            Parameter in objective function related to sparsity and low rank
         deps
             Optional list of pairs of correlated LF indices.
         class_balance
@@ -121,6 +134,7 @@ class DependencyAwareLabelModel(LabelModel):
         >>> label_model.fit_with_deps(L, deps=[(0, 2)])  # doctest: +SKIP
         >>> label_model.fit_with_deps(L, deps=[(0, 2)], Y_dev=Y_dev)  # doctest: +SKIP
         >>> label_model.fit_with_deps(L, deps=[(0, 2)], class_balance=[0.7, 0.3])  # doctest: +SKIP
+        >>> label_model.fit_with_deps(L, learn_deps=True)  # doctest: +SKIP
         """
         # Set random seed
         self.train_config: TrainConfig = merge_config(  # type:ignore
@@ -139,7 +153,22 @@ class DependencyAwareLabelModel(LabelModel):
 
         self._set_constants(L_shift)
         self._set_class_balance(class_balance, Y_dev)
-        self._set_dependencies(deps or [])
+
+        if learn_deps:
+            self.dep_learner = DependencyLearner(cardinality=self.cardinality)
+            learned_deps = self.dep_learner.fit(
+                L_train, thresh_mult, gamma, lam, verbose=self.config.verbose
+            )
+        else:
+            learned_deps = []
+
+        if deps is None:
+            deps = learned_deps
+        elif learned_deps != []:
+            deps += learned_deps
+        self.deps = deps
+        self._set_dependencies(self.deps or [])
+
         lf_analysis = LFAnalysis(L_train)
         self.coverage = lf_analysis.lf_coverages()
 
@@ -163,7 +192,9 @@ class DependencyAwareLabelModel(LabelModel):
         self._set_lr_scheduler()
 
         if self.higher_order:
-            self.Q = self._robust_pca_Q(self._get_augmented_label_matrix(L_shift))
+            self.Q = self._robust_pca_Q(
+                self._get_augmented_label_matrix(L_shift), lam, gamma
+            )
             self._fit_loss(partial(self._loss_inv_mu, l2=self.train_config.l2))
         else:
             self._fit_loss(partial(self._loss_mu, l2=self.train_config.l2))
