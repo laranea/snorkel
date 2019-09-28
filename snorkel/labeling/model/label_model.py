@@ -2,7 +2,7 @@ import logging
 import pickle
 import random
 from collections import Counter
-from itertools import chain, permutations, product
+from itertools import permutations
 from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple, Union
 
 import numpy as np
@@ -80,7 +80,9 @@ class LabelModelConfig(Config):
     device: str = "cpu"
 
 
-class _CliqueData(NamedTuple):
+class CliqueData(NamedTuple):
+    """Class to hold information about each clique in augmented L matrix."""
+
     start_index: int
     end_index: int
     max_cliques: Set[int]
@@ -185,9 +187,9 @@ class LabelModel(nn.Module):
         # Create a helper data structure which maps cliques (as tuples of member
         # sources) --> {start_index, end_index, maximal_cliques}, where
         # the last value is a set of indices in this data structure
-        self.c_data: Dict[int, _CliqueData] = {}
+        self.c_data: Dict[int, CliqueData] = {}
         for i in range(self.m):
-            self.c_data[i] = _CliqueData(
+            self.c_data[i] = CliqueData(
                 start_index=i * self.cardinality,
                 end_index=(i + 1) * self.cardinality,
                 max_cliques=set(
@@ -199,60 +201,7 @@ class LabelModel(nn.Module):
                 ),
             )
 
-        L_ind = self._create_L_ind(L)
-
-        # Get the higher-order clique statistics based on the clique tree
-        # First, iterate over the maximal cliques (nodes of c_tree) and
-        # separator sets (edges of c_tree)
-        if self.higher_order:
-            L_aug = np.copy(L_ind)
-            for item in chain(self.c_tree.nodes(), self.c_tree.edges()):
-                if isinstance(item, int):
-                    C = self.c_tree.node[item]
-                    C_type = "node"
-                elif isinstance(item, tuple):
-                    C = self.c_tree[item[0]][item[1]]
-                    C_type = "edge"
-                else:
-                    raise ValueError(item)
-                members = list(C["members"])
-
-                nc = len(members)
-
-                # If a unary maximal clique, just store its existing index
-                if nc == 1:
-                    C["start_index"] = members[0] * self.cardinality
-                    C["end_index"] = (members[0] + 1) * self.cardinality
-
-                # Else add one column for each possible value
-                else:
-                    L_C = np.ones((self.n, self.cardinality ** nc))
-                    for i, vals in enumerate(
-                        product(range(self.cardinality), repeat=nc)
-                    ):
-                        for j, v in enumerate(vals):
-                            L_C[:, i] *= L_ind[:, members[j] * self.cardinality + v]
-
-                    # Add to L_aug and store the indices
-                    if L_aug is not None:
-                        C["start_index"] = L_aug.shape[1]
-                        C["end_index"] = L_aug.shape[1] + L_C.shape[1]
-                        L_aug = np.hstack([L_aug, L_C])
-                    else:
-                        C["start_index"] = 0
-                        C["end_index"] = L_C.shape[1]
-                        L_aug = L_C
-
-                    # Add to self.c_data as well
-                    id = tuple(members) if len(members) > 1 else members[0]
-                    self.c_data[id] = _CliqueData(
-                        start_index=C["start_index"],
-                        end_index=C["end_index"],
-                        max_cliques=set([item]) if C_type == "node" else set(item),
-                    )
-            return L_aug
-        else:
-            return L_ind
+        return self._create_L_ind(L)
 
     def _build_mask(self) -> None:
         """Build mask applied to O^{-1}, O for the matrix approx constraint."""
@@ -621,7 +570,8 @@ class LabelModel(nn.Module):
             raise ValueError(f"L_train should have at least 3 labeling functions")
         self.t = 1
 
-    def _set_dependencies(self, deps: List[Tuple[int, int]]) -> None:
+    def _set_structure(self, deps: Optional[List[Tuple[int, int]]] = None) -> None:
+        deps = deps or []
         nodes = range(self.m)
         self.c_tree = get_clique_tree(nodes, deps)
         self.deps = deps
@@ -913,7 +863,7 @@ class LabelModel(nn.Module):
 
         self._set_constants(L_shift)
         self._set_class_balance(class_balance, Y_dev)
-        self._set_dependencies([])
+        self._set_structure()
         lf_analysis = LFAnalysis(L_train)
         self.coverage = lf_analysis.lf_coverages()
 

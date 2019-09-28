@@ -20,7 +20,7 @@ class LabelModelTest(unittest.TestCase):
         label_model.train_config = TrainConfig()  # type: ignore
         L_aug = L + 1
         label_model._set_constants(L_aug)
-        label_model._set_dependencies([])
+        label_model._set_structure([])
         label_model._generate_O(L_aug)
         label_model._build_mask()
         label_model._get_augmented_label_matrix(L_aug)
@@ -115,50 +115,20 @@ class LabelModelTest(unittest.TestCase):
             label_model.O.cpu().detach().numpy(), true_O
         )
 
-        # Higher order returns same matrix (num source = num cliques)
-        # Need to test c_tree form
-        label_model.higher_order = True
-        label_model._generate_O(L + 1)
-        np.testing.assert_array_almost_equal(
-            label_model.O.cpu().detach().numpy(), true_O
-        )
-
     def test_augmented_L_construction(self):
-        # 5 LFs
-        n = 3
-        m = 5
         k = 2
         L = np.array([[0, 0, 0, 1, 0], [0, 1, 1, 0, -1], [0, 0, 0, 0, -1]])
         L_shift = L + 1
         lm = LabelModel(cardinality=k, verbose=False)
         lm._set_constants(L_shift)
-        lm._set_dependencies([])
-        lm.higher_order = True
-        L_aug = lm._get_augmented_label_matrix(L_shift)
-
-        # Should have 10 columns:
-        # - 5 * 2 = 10 for the sources
-        self.assertEqual(L_aug.shape, (3, 10))
-
-        # 13 total nonzero entries
-        self.assertEqual(L_aug.sum(), 13)
-
-        # Next, check the singleton entries
-        for i in range(n):
-            for j in range(m):
-                if L_shift[i, j] > 0:
-                    self.assertEqual(L_aug[i, j * k + L_shift[i, j] - 1], 1)
+        lm._set_structure([])
 
         # Finally, check the clique entries
         # Singleton clique 1
         self.assertEqual(len(lm.c_tree.node[1]["members"]), 1)
-        j = lm.c_tree.node[1]["start_index"]
-        self.assertEqual(L_aug[0, j], 1)
 
         # Singleton clique 2
         self.assertEqual(len(lm.c_tree.node[2]["members"]), 1)
-        j = lm.c_tree.node[2]["start_index"]
-        self.assertEqual(L_aug[0, j + 1], 0)
 
     def test_conditional_probs(self):
         L = np.array([[0, 1, 0], [0, 1, 0]])

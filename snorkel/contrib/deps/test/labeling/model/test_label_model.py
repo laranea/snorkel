@@ -80,7 +80,7 @@ class LabelModelTest(unittest.TestCase):
         L_shift = L + 1
         label_model._set_constants(L_shift)
         label_model._set_class_balance(class_balance, None)
-        label_model._set_dependencies(deps)
+        label_model._set_structure(deps)
         label_model._generate_O(L_shift)
         label_model._init_params()
         return label_model
@@ -115,7 +115,7 @@ class LabelModelTest(unittest.TestCase):
         lm = DependencyAwareLabelModel(cardinality=3, verbose=False)
         lm._set_constants(L_shift)
         lm._set_class_balance(None, None)
-        lm._set_dependencies([(0, 2)])
+        lm._set_structure([(0, 2)])
         L_aug = lm._get_augmented_label_matrix(L_shift)
         expected_L = np.array(
             [
@@ -218,19 +218,48 @@ class TestLabelModelAdvanced(unittest.TestCase):
         """Test the LabelModel's estimate of P and Y on a simple synthetic dataset."""
         cond_probs = np.array([[0.5, 0.4, 0.1], [0.5, 0.1, 0.4]])
         y_true, L = generate_synthetic_data(
-            100000, 0.8, [0.3, 0.7], cond_probs, [{0, 1, 4}, {2}, {3}, {5}, {6}]
+            500000, 0.8, [0.3, 0.7], cond_probs, [{0, 1, 4}, {2}, {3}, {5}, {6}]
         )
 
         np.random.seed(123)
 
         # Train LabelModel
         lm = LabelModel(cardinality=2)
-        lm.fit(L, l2=0.2, n_epochs=5000)
+        lm.fit(L, n_epochs=5000)
         score = lm.score(L, y_true)
 
         # Train DependencyAwareLabelModel
         dalm = DependencyAwareLabelModel(cardinality=2)
-        dalm.fit_with_deps(L, deps=[(0, 1), (0, 4), (1, 4)], l2=0.2, n_epochs=5000)
+        dalm.fit_with_deps(L, deps=[(0, 1), (0, 4), (1, 4)], n_epochs=5000)
+        d_score = dalm.score(L, y_true)
+
+        lf_accuracies = dalm.get_weights()
+        for acc in lf_accuracies:
+            self.assertAlmostEqual(acc, 0.8, delta=0.05)
+
+        # Test predicted labels
+        self.assertGreaterEqual(score["accuracy"], 0.75)
+        self.assertGreaterEqual(d_score["accuracy"], score["accuracy"])
+
+    def test_label_model_multiclass(self) -> None:
+        """Test the LabelModel's estimate of P and Y on a simple synthetic dataset."""
+        cond_probs = np.array(
+            [[0.5, 0.4, 0.05, 0.05], [0.5, 0.05, 0.4, 0.05], [0.5, 0.05, 0.05, 0.4]]
+        )
+        y_true, L = generate_synthetic_data(
+            100000, 0.8, [0.3, 0.5, 0.2], cond_probs, [{0, 1}, {2, 4}, {3}, {5}, {6}]
+        )
+
+        np.random.seed(123)
+
+        # Train LabelModel
+        lm = LabelModel(cardinality=3)
+        lm.fit(L, n_epochs=5000)
+        score = lm.score(L, y_true)
+
+        # Train DependencyAwareLabelModel
+        dalm = DependencyAwareLabelModel(cardinality=3)
+        dalm.fit_with_deps(L, deps=[(0, 1), (2, 4)], n_epochs=5000)
         d_score = dalm.score(L, y_true)
 
         # Test predicted labels

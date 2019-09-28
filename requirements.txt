@@ -40,7 +40,6 @@ dill>=0.3.0,<0.4.0
 
 # Dependency Learning
 cvxpy>=1.0.25,<2.0.0
-cvxopt==1.2.3
 
 #### DEV TOOLS
 
