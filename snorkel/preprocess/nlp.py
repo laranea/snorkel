@@ -61,9 +61,9 @@ class SpacyPreprocessor(Preprocessor):
             mapped_field_names=dict(doc=doc_field),
             pre=pre,
             memoize=memoize,
-            gpu=gpu,
         )
-        if gpu:
+        self.gpu=gpu
+        if self.gpu:
             spacy.prefer_gpu()
         self._nlp = spacy.load(language, disable=disable or [])
 
