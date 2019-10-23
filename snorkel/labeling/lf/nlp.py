@@ -18,6 +18,7 @@ class SpacyPreprocessorParameters(NamedTuple):
     disable: Optional[List[str]]
     pre: List[BasePreprocessor]
     memoize: bool
+    gpu: bool
 
 
 class SpacyPreprocessorConfig(NamedTuple):
