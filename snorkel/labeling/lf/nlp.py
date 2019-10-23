@@ -189,6 +189,7 @@ class base_nlp_labeling_function(labeling_function):
         self.language = language
         self.disable = disable
         self.memoize = memoize
+        self.gpu = gpu
 
     def __call__(self, f: Callable[..., int]) -> BaseNLPLabelingFunction:
         """Wrap a function to create an ``BaseNLPLabelingFunction``.
