@@ -62,7 +62,7 @@ class SpacyPreprocessor(Preprocessor):
             pre=pre,
             memoize=memoize,
         )
-        self.gpu=gpu
+        self.gpu = gpu
         if self.gpu:
             spacy.prefer_gpu()
         self._nlp = spacy.load(language, disable=disable or [])
