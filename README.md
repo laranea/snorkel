@@ -7,6 +7,8 @@
 [![docs](https://readthedocs.org/projects/snorkel/badge/?version=master)](https://snorkel.readthedocs.io/en/master)
 [![coverage](https://codecov.io/gh/snorkel-team/snorkel/branch/master/graph/badge.svg)](https://codecov.io/gh/snorkel-team/snorkel/branch/master)
 [![license](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Join the community on Spectrum](https://withspectrum.github.io/badge/badge.svg)](https://spectrum.chat/snorkel)
+
 
 ***Programmatically Build and Manage Training Data***
 
@@ -25,7 +27,7 @@ These tutorials demonstrate a variety of tasks, domains, labeling techniques, an
 
 # Installation
 
-To install Snorkel, we recommend using `pip`:
+Snorkel requires Python 3.6 or later. To install Snorkel, we recommend using `pip`:
 
 ```bash
 pip install snorkel
